@@ -14,18 +14,21 @@ use tower_http::services::ServeDir;
 
 #[tokio::main]
 async fn main() {
+    // Set a custom panic hook to log panic information
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!("[server] PANIC: {:?}", panic_info);
     }));
 
+    // Parse command-line arguments to determine the mode of operation
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 && args[1] == "--web" {
-        run_web_test().await;
+        run_web_test().await; // Run the web test mode
     } else {
-        run_local_test().await;
+        run_local_test().await; // Run the local test mode
     }
 }
 
+/// Runs the server in web test mode, serving both WebSocket and static web content.
 async fn run_web_test() {
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
@@ -38,6 +41,7 @@ async fn run_web_test() {
         }),
     );
 
+    // Spawn a task to handle WebSocket connections
     tokio::spawn(async move {
         let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
         println!("Listening at ws://127.0.0.1:8081/ws");
@@ -49,6 +53,7 @@ async fn run_web_test() {
     // Static web app on port 8080
     let web_app = Router::new().nest_service("/", ServeDir::new("web"));
 
+    // Serve the static web content
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
     println!("Serving web UI at http://127.0.0.1:8080");
 
@@ -57,15 +62,18 @@ async fn run_web_test() {
         .unwrap();
 }
 
+/// Runs the server in local test mode, including WebSocket handling and client tests.
 async fn run_local_test() {
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
+    // WebSocket app on port 8081
     let app = Router::new()
         .route("/ws", get({
             let subs = subscribers.clone();
             move |ws, info| handle_socket(ws, info, subs.clone())
         }));
 
+    // Start the WebSocket server
     let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
     println!("Listening at ws://127.0.0.1:8081/ws");
 
@@ -75,7 +83,7 @@ async fn run_local_test() {
             .unwrap();
     });
 
-    // Run client tests after a slight delay to let server start
+    // Run client tests after a slight delay to let the server start
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
     client_tests::run_client_tests().await;
 }
