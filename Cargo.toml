@@ -1,0 +1,7 @@
+[workspace]
+members = ["libws", "server"]
+resolver = "2"
+
+[workspace.dependencies]
+ws = { path = "../ws" }
+server = { path = "../server" }

@@ -1,0 +1,15 @@
+[package]
+name = "libws"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.21"
+
+[lib]
+name = "libws"
+path = "src/lib.rs"
+crate-type = ["rlib"]
