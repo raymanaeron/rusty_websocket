@@ -531,6 +531,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures-util",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-tungstenite 0.21.0",
 ]
@@ -812,6 +814,8 @@ dependencies = [
  "axum",
  "futures-util",
  "libws",
+ "serde",
+ "serde_json",
  "tokio",
  "tower-http",
 ]

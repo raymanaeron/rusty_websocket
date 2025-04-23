@@ -1,3 +1,4 @@
+// lib.rs
 pub mod ws_client;
 
 use axum::{
@@ -6,10 +7,14 @@ use axum::{
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
-use std::{collections::HashMap, net::SocketAddr, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc::{self, UnboundedSender};
+use serde_json::json;
 
-// Type alias for topic names and their subscribers
 pub type Topic = String;
 pub type Subscribers = Arc<Mutex<HashMap<Topic, Vec<UnboundedSender<String>>>>>;
 
@@ -21,7 +26,6 @@ pub async fn handle_socket(
 ) -> impl IntoResponse {
     println!("[server] WS connection from {}", addr);
 
-    // Upgrade the connection and run the WebSocket handler
     ws.on_upgrade(move |socket| {
         async move {
             if let Err(e) = run_connection(socket, subscribers).await {
@@ -33,19 +37,13 @@ pub async fn handle_socket(
 
 /// Manages the WebSocket connection, handling messages and subscriptions.
 async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(), String> {
-    // Split the WebSocket into sender and receiver
     let (mut ws_sender, mut ws_receiver) = socket.split();
-
-    // Track topics the client is subscribed to
     let my_topics = Arc::new(Mutex::new(Vec::<String>::new()));
-
-    // Create a channel for sending messages to the client
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let tx_clone = tx.clone();
     let subscribers_inner = subscribers.clone();
     let topics_inner = my_topics.clone();
 
-    // Task for sending messages to the client
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if ws_sender.send(Message::Text(msg)).await.is_err() {
@@ -54,21 +52,15 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
         }
     });
 
-    // Task for receiving messages from the client
     let receive_task = tokio::spawn(async move {
         let mut client_name: String = "<unknown>".to_string();
         while let Some(msg_result) = ws_receiver.next().await {
             match msg_result {
                 Ok(Message::Text(text)) => {
-                    let content = text.clone();
-
-                    // Handle client name registration
-                    if let Some(rest) = content.strip_prefix("register-name:") {
+                    if let Some(rest) = text.strip_prefix("register-name:") {
                         client_name = rest.trim().to_string();
                         println!("[server] Registered client name: [{}]", client_name);
-
-                    // Handle topic subscription
-                    } else if let Some(rest) = content.strip_prefix("subscribe:") {
+                    } else if let Some(rest) = text.strip_prefix("subscribe:") {
                         let topic = rest.trim().to_string();
                         println!("[server] [{}] subscribed to topic: {}", client_name, topic);
 
@@ -80,9 +72,7 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
                             .push(tx.clone());
 
                         topics_inner.lock().unwrap().push(topic);
-
-                    // Handle topic unsubscription
-                    } else if let Some(rest) = content.strip_prefix("unsubscribe:") {
+                    } else if let Some(rest) = text.strip_prefix("unsubscribe:") {
                         let topic = rest.trim().to_string();
                         println!("[server] [{}] unsubscribed from topic: {}", client_name, topic);
 
@@ -92,9 +82,7 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
                         }
 
                         topics_inner.lock().unwrap().retain(|t| t != &topic);
-
-                    // Handle message publishing
-                    } else if let Some(rest) = content.strip_prefix("publish:") {
+                    } else if let Some(rest) = text.strip_prefix("publish:") {
                         if let Some((topic, payload)) = rest.trim().split_once(":") {
                             let topic = topic.trim().to_string();
                             let message = payload.trim().to_string();
@@ -107,7 +95,13 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
                             let subs = subscribers_inner.lock().unwrap();
                             if let Some(sinks) = subs.get(&topic) {
                                 for s in sinks {
-                                    if s.send(message.clone()).is_err() {
+                                    let json_payload = json!({
+                                        "topic": topic,
+                                        "message": message,
+                                    })
+                                    .to_string();
+
+                                    if s.send(json_payload).is_err() {
                                         eprintln!(
                                             "[server] [{}] failed to send to subscriber",
                                             client_name
@@ -140,7 +134,6 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
         }
     });
 
-    // Wait for both tasks to complete
     match tokio::try_join!(send_task, receive_task) {
         Ok((_, _)) => {}
         Err(e) => {
@@ -149,7 +142,6 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
         }
     }
 
-    // Cleanup subscriptions on client disconnect
     let mut subs = subscribers.lock().unwrap();
     for topic in my_topics.lock().unwrap().iter() {
         if let Some(vec) = subs.get_mut(topic) {
@@ -161,7 +153,6 @@ async fn run_connection(socket: WebSocket, subscribers: Subscribers) -> Result<(
     Ok(())
 }
 
-/// Compares two channels to check if they are the same.
 fn same_channel(a: &UnboundedSender<String>, b: &UnboundedSender<String>) -> bool {
     std::ptr::eq(a, b)
 }
