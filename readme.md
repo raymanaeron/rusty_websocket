@@ -54,7 +54,7 @@ All messages follow a JSON structure:
 - `register-name:<ClientName>` — identifies a client
 - `subscribe:<Topic>` — subscribes to a topic
 - `unsubscribe:<Topic>` — removes subscription
-- `publish-json:<JSON>` — sends a JSON payload to all topic subscribers
+- `publish:<JSON>` — sends a JSON payload to all topic subscribers
 
 ---
 
