@@ -1,169 +1,146 @@
-# Intra app messaging framework for disconnected apps
+# WebSocket-based Pub/Sub Framework for Distributed Applications
 
-This project implements a lightweight pub-sub (publish-subscribe) messaging framework that allows multiple disconnected apps—written in Rust or JavaScript—to talk to each other in real time. It is ideal for system orchestration, onboarding flows, or multi-client coordination using a WebSocket-based messaging bus.
+## Problem Statement
+Modern applications often consist of multiple distributed components that need to communicate in real-time. Traditional HTTP-based communication can be cumbersome and doesn't support real-time updates efficiently. Additionally, managing state and coordination between multiple clients (web, desktop, CLI) becomes complex without a centralized messaging system.
 
-The framework includes:
-- A high-performance WebSocket server written in Rust with `axum`
-- A pluggable Rust WebSocket client with callback-based message handling
-- JSON-based message structure including topic, payload, publisher, and timestamp
-- A JS/WebSocket interface for browser clients
-- Full logging and test harness in both Rust and browser environments
+## Solution
+This framework provides a lightweight pub/sub (publish-subscribe) messaging system using WebSocket technology. It includes:
+- A high-performance Rust WebSocket server using axum
+- A Rust client library with async support and error handling
+- A JavaScript client implementation for web browsers
+- JSON-based message protocol for cross-platform compatibility
 
----
+## Benefits
+- Real-time bidirectional communication
+- Language-agnostic messaging (Rust, JavaScript)
+- Topic-based message routing
+- Connection state management and error handling
+- Simple API for both Rust and JavaScript clients
 
-## Architecture Overview
-
-The architecture follows a centralized message bus model:
+## Architecture
 
 ```
-       ┌────────────┐
-       │ JS Client  │
-       └────┬───────┘
-            │
-       ┌────▼─────┐
-       │ WebSocket│
-       │  Server  │  ◄────────────┐
-       └────┬─────┘               │
-            │                     │
-  ┌─────────▼──────────┐  ┌───────▼────────┐
-  │ Rust Client (CLI)  │  │ Rust Client UI │
-  └────────────────────┘  └────────────────┘
+[Rust Client] ←→ [WebSocket Server] ←→ [Browser Client]
+     ↑               ↑                        ↑
+     |               |                        |
+   connect()     JSON Message              connect()
+   subscribe()    Protocol              subscribe()
+   publish()                            publish()
 ```
-
-Each client (Rust or JS) registers itself by name, subscribes to one or more topics, and optionally publishes messages to those topics. Subscribers automatically receive published messages in real-time using a shared JSON protocol.
-
----
-
-## How It Works
 
 ### Message Protocol
-
-All messages follow a JSON structure:
-
 ```json
 {
   "publisher_name": "Client1",
   "topic": "NetworkConnectedEvent",
   "payload": "Network connected",
-  "timestamp": "2025-04-24T01:25:37Z"
+  "timestamp": "2024-01-24T10:25:37Z"
 }
 ```
 
-### Supported Commands
+## Using the Rust Client
 
-- `register-name:<ClientName>` — identifies a client
-- `subscribe:<Topic>` — subscribes to a topic
-- `unsubscribe:<Topic>` — removes subscription
-- `publish:<JSON>` — sends a JSON payload to all topic subscribers
-
----
-
-## Running and Testing
-
-### Build the Server
-
-```sh
-cargo build
-```
-
-### Test Mode 1: Rust Clients (CLI)
-
-```sh
-cargo run
-```
-
-This mode:
-- Starts the WebSocket server on `ws://127.0.0.1:8081/ws`
-- Automatically launches 3 clients via `client_tests.rs`
-- Each client subscribes and publishes using `WsClient` with timestamps and topic routing
-- Each publish returns a Result and is logged:
-  ```rust
-  if let Err(e) = client.publish(...) {
-      println!("Publish failed: {}", e);
-  }
-  ```
-
-### Test Mode 2: Browser Clients
-
-```sh
-cargo run -- server --web
-```
-
-Then open your browser to [http://localhost:8080](http://localhost:8080)
-
-- Static HTML/JS served on port 8080
-- WebSocket server on port 8081
-- Click “Start Test” to connect and simulate 3 JS clients using `tests.js`
-- Each publish is wrapped in try/catch and logged if it fails:
-  ```js
-  try {
-      ws.send(...);
-  } catch (err) {
-      log("Publish failed: " + err);
-  }
-  ```
-
-> Ensure you run from the directory containing the `web/` folder or configure path accordingly.
-
----
-
-## Rust Client API
-
+### Connection
 ```rust
 let mut client = WsClient::connect("Client1", "ws://127.0.0.1:8081/ws").await?;
-client.subscribe("Client1", "TopicA", "payload").await;
-if let Err(e) = client.publish("Client1", "TopicA", "Hello World", &Utc::now().to_rfc3339()).await {
-    println!("Publish failed: {}", e);
-}
-client.on_message("TopicA", |msg| println!("Received: {}", msg));
 ```
 
-### Method Signatures
-
+### Subscribe to Topics
 ```rust
-pub async fn connect(client_name: &str, ws_url: &str) -> Result<Self>;
-pub async fn subscribe(&mut self, subscriber_name: &str, topic: &str, payload: &str);
-pub async fn publish(&mut self, publisher_name: &str, topic: &str, payload: &str, timestamp: &str) -> Result<(), String>;
-pub fn on_message(&mut self, topic: &str, callback: impl Fn(String) + Send + Sync + 'static);
-pub fn is_connected(&self) -> bool;
+// Subscribe to multiple topics
+client.subscribe("Client1", "DetectCustomerEvent", "no-payload").await;
+client.subscribe("Client1", "NetworkConnectedEvent", "no-payload").await;
+
+// Register message handlers
+client.on_message("DetectCustomerEvent", |msg| {
+    println!("Customer Event: {}", msg);
+});
 ```
 
----
+### Publishing Messages
+```rust
+use chrono::Utc;
 
-## JavaScript Client Flow
+// Publish with timestamp
+let result = client.publish(
+    "Client1",
+    "NetworkConnectedEvent",
+    "Network connected successfully",
+    &Utc::now().to_rfc3339()
+).await;
 
-- `createClient(name, url, topics, publishAction)` registers a name, subscribes to topics, and sends a structured JSON message
-- Each publish uses `try/catch` to detect disconnected state
-- Incoming messages are decoded and logged with publisher, topic, payload, and timestamp
-
----
-
-## Folder Structure
-
-```
-.
-├── src/
-│   ├── main.rs
-│   ├── client_tests.rs
-│   └── ws_client.rs
-├── web/
-│   ├── index.html
-│   └── tests.js
-├── lib.rs
-├── Cargo.toml
-└── README.md
+if let Err(e) = result {
+    println!("Failed to publish: {}", e);
+}
 ```
 
----
+## Using the JavaScript Client
+
+### Connection and Subscribe
+```javascript
+const client = await createClient(
+    "WebClient1",
+    "ws://localhost:8081/ws",
+    {
+        subscriptions: ["DetectCustomerEvent", "NetworkConnectedEvent"]
+    },
+    // Optional publish action
+    {
+        topic: "RegistrationEvent",
+        message: "Web client registered"
+    }
+);
+
+// Message handler is automatically set up in createClient
+```
+
+### Publishing Messages
+```javascript
+const message = {
+    publisher_name: clientName,
+    topic: "StatusEvent",
+    payload: "Status updated",
+    timestamp: new Date().toISOString()
+};
+
+ws.send(`publish-json:${JSON.stringify(message)}`);
+```
+
+## Running the Framework
+
+### CLI Mode (Rust Clients)
+```bash
+cargo run
+```
+This starts the WebSocket server and runs automated tests with three Rust clients.
+
+### Web Mode (Browser Clients)
+```bash
+cargo run -- --web
+```
+This:
+1. Starts the WebSocket server on port 8081
+2. Serves a static web UI on http://localhost:8080
+3. Allows testing with browser-based clients
+
+## Project Structure
+```
+libws/
+  ├── src/
+  │   ├── lib.rs        # Core WebSocket server implementation
+  │   └── ws_client.rs  # Rust client implementation
+server/
+  ├── src/
+  │   ├── main.rs       # Server entry point
+  │   └── client_tests.rs # Automated Rust client tests
+  └── web/
+      ├── index.html    # Web client UI
+      └── tests.js      # JavaScript client implementation
+```
 
 ## Dependencies
-
-- Rust 2021+
-- `tokio`, `axum`, `tower-http`, `futures-util`, `serde`, `chrono`
-- WebSocket support in modern browsers
-
----
-
-## Summary
-
-This project enables coordinated orchestration between UI, CLI, and embedded Rust or JS apps through a shared, topic-based WebSocket message bus. Ideal for workflows like device setup, distributed tests, or system integration.
+- Rust 2021 edition
+- tokio for async runtime
+- axum for WebSocket server
+- serde_json for message serialization
+- chrono for timestamp handling
