@@ -32,7 +32,7 @@ async fn main() {
 async fn run_web_test() {
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
-    // WebSocket app on port 8081
+    // Configure the WebSocket app on port 8081
     let ws_app = Router::new().route(
         "/ws",
         get({
@@ -50,7 +50,7 @@ async fn run_web_test() {
             .unwrap();
     });
 
-    // Static web app on port 8080
+    // Configure the static web app on port 8080
     let web_app = Router::new().nest_service("/", ServeDir::new("web"));
 
     // Serve the static web content
@@ -66,12 +66,14 @@ async fn run_web_test() {
 async fn run_local_test() {
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
-    // WebSocket app on port 8081
-    let app = Router::new()
-        .route("/ws", get({
+    // Configure the WebSocket app on port 8081
+    let app = Router::new().route(
+        "/ws",
+        get({
             let subs = subscribers.clone();
             move |ws, info| handle_socket(ws, info, subs.clone())
-        }));
+        }),
+    );
 
     // Start the WebSocket server
     let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
