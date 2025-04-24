@@ -1,4 +1,4 @@
-# WebSocket Messaging Bus for Disconnected Apps
+# Intra app messaging framework for disconnected apps
 
 This project implements a lightweight pub-sub (publish-subscribe) messaging framework that allows multiple disconnected apps—written in Rust or JavaScript—to talk to each other in real time. It is ideal for system orchestration, onboarding flows, or multi-client coordination using a WebSocket-based messaging bus.
 
@@ -11,7 +11,7 @@ The framework includes:
 
 ---
 
-## 🧩 Architecture Overview
+## Architecture Overview
 
 The architecture follows a centralized **message bus model**:
 
@@ -95,7 +95,7 @@ Then open your browser to [http://localhost:8080](http://localhost:8080)
 
 ---
 
-## 🧠 Rust Client API
+## Rust Client API
 
 ```rust
 let mut client = WsClient::connect("Client1", "ws://127.0.0.1:8081/ws").await?;
@@ -140,7 +140,7 @@ pub fn on_message(&mut self, topic: &str, callback: impl Fn(String) + Send + Syn
 
 ---
 
-## 🔧 Dependencies
+## Dependencies
 
 - Rust 2021+
 - `tokio`, `axum`, `tower-http`, `futures-util`, `serde`, `chrono`
@@ -148,6 +148,6 @@ pub fn on_message(&mut self, topic: &str, callback: impl Fn(String) + Send + Syn
 
 ---
 
-## 📌 Summary
+## Summary
 
 This project enables coordinated orchestration between UI, CLI, and embedded Rust or JS apps through a shared, topic-based WebSocket message bus. Ideal for workflows like device setup, distributed tests, or system integration.
