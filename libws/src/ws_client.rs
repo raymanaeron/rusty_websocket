@@ -17,6 +17,7 @@ pub struct WsClient {
     pub ws_channel: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>, // WebSocket channel for sending messages
     on_message_handlers: Arc<Mutex<HashMap<String, Callback>>>, // Handlers for incoming messages by topic
     _async_task_handler: JoinHandle<()>, // Background task for receiving messages
+    is_connected: Arc<Mutex<bool>>, // Tracks the connection state
 }
 
 impl WsClient {
@@ -72,6 +73,7 @@ impl WsClient {
             ws_channel,
             on_message_handlers: handlers,
             _async_task_handler: task,
+            is_connected: Arc::new(Mutex::new(true)),
         })
     }
 
@@ -94,8 +96,15 @@ impl WsClient {
     }
 
     /// Publishes a message to a specific topic.
-    pub async fn publish(&mut self, publisher_name: &str, topic: &str, payload: &str, timestamp: &str) {
-        println!("[publish] publisher_name={}, topic={}, payload={}, timestamp={}", publisher_name, topic, payload, timestamp);
+    pub async fn publish(&mut self, publisher_name: &str, topic: &str, payload: &str, timestamp: &str) -> Result<(), String> {
+        // Check connection state first
+        if !*self.is_connected.lock().unwrap() {
+            return Err("WebSocket is not connected".to_string());
+        }
+
+        println!("[publish] publisher_name={}, topic={}, payload={}, timestamp={}", 
+            publisher_name, topic, payload, timestamp);
+        
         let msg = json!({
             "publisher_name": publisher_name,
             "topic": topic,
@@ -104,8 +113,13 @@ impl WsClient {
         });
         let cmd = format!("publish-json:{}", msg.to_string());
 
-        if let Err(e) = self.ws_channel.send(Message::Text(cmd)).await {
-            println!("[publish] Error sending message: {:?}", e);
+        match self.ws_channel.send(Message::Text(cmd)).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Mark as disconnected on error
+                *self.is_connected.lock().unwrap() = false;
+                Err(format!("Failed to send message: {}", e))
+            }
         }
     }
 
@@ -119,5 +133,10 @@ impl WsClient {
             .lock()
             .unwrap()
             .insert(topic.to_string(), Box::new(callback));
+    }
+
+    /// Checks if the WebSocket connection is active.
+    pub fn is_connected(&self) -> bool {
+        *self.is_connected.lock().unwrap()
     }
 }

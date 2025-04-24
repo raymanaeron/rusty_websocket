@@ -53,8 +53,13 @@ async function createClient(clientName, wsUrl, topics, publishAction) {
                     payload: publishAction.message,
                     timestamp: getTimestamp()
                 };
-                log(`[publish] ${clientName} sending to ${message.topic} with payload=${message.payload}`);
-                ws.send(`publish-json:${JSON.stringify(message)}`);
+            
+                try {
+                    ws.send(`publish-json:${JSON.stringify(message)}`);
+                    log(`[publish] ${clientName} sent to ${message.topic} with payload=${message.payload}`);
+                } catch (error) {
+                    log(`[publish] ${clientName} failed to send: ${error}`);
+                }
             }, 500);
 
             resolve(ws); // Resolve the promise once the client is set up

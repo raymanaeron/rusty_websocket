@@ -62,10 +62,16 @@ pub async fn run_client_tests() {
     println!("[test] Publishing messages...");
 
     // Publish messages to specific topics
-    client1.publish("Client1", registration_event, "Registration complete", &timestamp).await;
-    client2.publish("Client2", connect_event, "Network connected", &timestamp).await;
-    client3.publish("Client3", detect_event, "Customer detected", &timestamp).await;
-
+    if let Err(e) = client1.publish("Client1", registration_event, "Registration complete", &timestamp).await {
+        println!("[Client1] Publish failed: {}", e);
+    }
+    if let Err(e) = client2.publish("Client2", connect_event, "Network connected", &timestamp).await {
+        println!("[Client2] Publish failed: {}", e);
+    }
+    if let Err(e) = client3.publish("Client3", detect_event, "Customer detected", &timestamp).await {
+        println!("[Client3] Publish failed: {}", e);
+    }
+    
     // Wait to ensure all messages are processed
     sleep(Duration::from_secs(3)).await;
 
