@@ -13,7 +13,7 @@ The framework includes:
 
 ## Architecture Overview
 
-The architecture follows a centralized **message bus model**:
+The architecture follows a centralized message bus model:
 
 ```
        ┌────────────┐
@@ -66,8 +66,6 @@ All messages follow a JSON structure:
 cargo build
 ```
 
-Add `chrono = { version = "0.4", features = ["serde", "alloc"] }` to your `Cargo.toml` if not already present.
-
 ### Test Mode 1: Rust Clients (CLI)
 
 ```sh
@@ -78,6 +76,12 @@ This mode:
 - Starts the WebSocket server on `ws://127.0.0.1:8081/ws`
 - Automatically launches 3 clients via `client_tests.rs`
 - Each client subscribes and publishes using `WsClient` with timestamps and topic routing
+- Each publish returns a Result and is logged:
+  ```rust
+  if let Err(e) = client.publish(...) {
+      println!("Publish failed: {}", e);
+  }
+  ```
 
 ### Test Mode 2: Browser Clients
 
@@ -90,6 +94,14 @@ Then open your browser to [http://localhost:8080](http://localhost:8080)
 - Static HTML/JS served on port 8080
 - WebSocket server on port 8081
 - Click “Start Test” to connect and simulate 3 JS clients using `tests.js`
+- Each publish is wrapped in try/catch and logged if it fails:
+  ```js
+  try {
+      ws.send(...);
+  } catch (err) {
+      log("Publish failed: " + err);
+  }
+  ```
 
 > Ensure you run from the directory containing the `web/` folder or configure path accordingly.
 
@@ -100,7 +112,9 @@ Then open your browser to [http://localhost:8080](http://localhost:8080)
 ```rust
 let mut client = WsClient::connect("Client1", "ws://127.0.0.1:8081/ws").await?;
 client.subscribe("Client1", "TopicA", "payload").await;
-client.publish("Client1", "TopicA", "Hello World", &Utc::now().to_rfc3339()).await;
+if let Err(e) = client.publish("Client1", "TopicA", "Hello World", &Utc::now().to_rfc3339()).await {
+    println!("Publish failed: {}", e);
+}
 client.on_message("TopicA", |msg| println!("Received: {}", msg));
 ```
 
@@ -109,8 +123,9 @@ client.on_message("TopicA", |msg| println!("Received: {}", msg));
 ```rust
 pub async fn connect(client_name: &str, ws_url: &str) -> Result<Self>;
 pub async fn subscribe(&mut self, subscriber_name: &str, topic: &str, payload: &str);
-pub async fn publish(&mut self, publisher_name: &str, topic: &str, payload: &str, timestamp: &str);
+pub async fn publish(&mut self, publisher_name: &str, topic: &str, payload: &str, timestamp: &str) -> Result<(), String>;
 pub fn on_message(&mut self, topic: &str, callback: impl Fn(String) + Send + Sync + 'static);
+pub fn is_connected(&self) -> bool;
 ```
 
 ---
@@ -118,6 +133,7 @@ pub fn on_message(&mut self, topic: &str, callback: impl Fn(String) + Send + Syn
 ## JavaScript Client Flow
 
 - `createClient(name, url, topics, publishAction)` registers a name, subscribes to topics, and sends a structured JSON message
+- Each publish uses `try/catch` to detect disconnected state
 - Incoming messages are decoded and logged with publisher, topic, payload, and timestamp
 
 ---
