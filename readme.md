@@ -20,14 +20,14 @@ The architecture follows a centralized **message bus model**:
        │ JS Client  │
        └────┬───────┘
             │
-       ┌────▼────┐
+       ┌────▼─────┐
        │ WebSocket│
-       │  Server │  ◄────────────┐
-       └────┬────┘               │
-            │                    │
-  ┌─────────▼──────────┐ ┌───────▼────────┐
-  │ Rust Client (CLI)  │ │ Rust Client UI │
-  └────────────────────┘ └────────────────┘
+       │  Server  │  ◄────────────┐
+       └────┬─────┘               │
+            │                     │
+  ┌─────────▼──────────┐  ┌───────▼────────┐
+  │ Rust Client (CLI)  │  │ Rust Client UI │
+  └────────────────────┘  └────────────────┘
 ```
 
 Each client (Rust or JS) registers itself by name, subscribes to one or more topics, and optionally publishes messages to those topics. Subscribers automatically receive published messages in real-time using a shared JSON protocol.
