@@ -4,20 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.21"
 tower-http = { version = "0.5", features = ["fs"] }
+typenum = "1.17.0"
+rand = "0.8.5"
+x25519-dalek = { version = "2.0.0", features = ["static_secrets"] }
+generic-array = "0.14.7"
+aes-gcm = "0.10.3"
+base64 = "0.21.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-chrono = { version = "0.4", features = ["serde", "alloc"] }
-x25519-dalek = "2.0.0"       # For X25519 key exchange (pure Rust, no OpenSSL)
-aes-gcm = "0.10.2"           # For AES-256-GCM authenticated encryption (safe symmetric encryption)
-rand_core = "0.6.4"          # Random number generation for nonces
-base64 = "0.21.5"            # Encoding/decoding public keys for transmission
-
-[lib]
-name = "libws"
-path = "src/lib.rs"
-crate-type = ["rlib"]
+axum = { version = "0.7.9", features = ["ws"] }
+p256 = { version = "0.13.2", features = ["ecdh", "arithmetic"] }

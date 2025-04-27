@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encryption Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        #logOutput {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+        
+        .log-info {
+            color: #333;
+        }
+        
+        .log-error {
+            color: #d32f2f;
+            font-weight: bold;
+        }
+        
+        .log-success {
+            color: #388e3c;
+            font-weight: bold;
+        }
+        
+        .log-warning {
+            color: #f57c00;
+        }
+        
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .actions {
+            margin: 20px 0;
+        }
+        
+        h2 {
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebCrypto Encryption Test</h1>
+    <p>
+        This page tests the encryption functionality using the Web Crypto API.
+        Click the button below to run the encryption test.
+    </p>
+    
+    <div class="actions">
+        <button id="startBtn">Run Encryption Test</button>
+        <button id="clearBtn" onclick="document.getElementById('logOutput').innerHTML = ''">Clear Log</button>
+    </div>
+    
+    <h2>Log Output:</h2>
+    <div id="logOutput"></div>
+    
+    <!-- Add a simple script to verify the log element exists -->
+    <script>
+        console.log("Log element exists:", !!document.getElementById('logOutput'));
+        
+        // Add an initial message directly to verify DOM manipulation works
+        window.addEventListener('DOMContentLoaded', () => {
+            const logOutput = document.getElementById('logOutput');
+            if (logOutput) {
+                const initialMsg = document.createElement('div');
+                initialMsg.textContent = "Log initialized at " + new Date().toLocaleTimeString();
+                initialMsg.style.color = "#388e3c";
+                logOutput.appendChild(initialMsg);
+            }
+        });
+    </script>
+
+    <!-- Only include the module script -->
+    <script type="module" src="enc_tests.js"></script>
+</body>
+</html>

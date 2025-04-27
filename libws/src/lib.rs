@@ -1,5 +1,7 @@
 // Public module for WebSocket client functionality
 pub mod ws_client;
+pub mod enc_utils;
+pub mod enc_api_route;
 
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},

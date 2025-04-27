@@ -1,16 +1,38 @@
 // src/main.rs
-use axum::{routing::get, Router};
+use axum::{
+    Router,
+    routing::get,
+    extract::{
+        connect_info::ConnectInfo, 
+        ws::WebSocketUpgrade,
+        State,
+    },
+    response::IntoResponse,
+};
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use libws::Subscribers;
+mod ws_tests; // Updated from client_tests
+mod enc_tests;
+
 use std::{
     collections::HashMap,
     env,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
 };
 use tokio::net::TcpListener;
-use libws::{handle_socket, Subscribers};
-mod client_tests;
-
 use tower_http::services::ServeDir;
+use tower_http::cors::{Any, CorsLayer};
+use libws::enc_api_route::{enc_api_router, create_web_compatible_state};
+
+/// Adapter function to bridge between server and library
+async fn handle_socket_adapter(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(subscribers): State<Subscribers>,
+) -> impl IntoResponse {
+    // Call the libws handler
+    libws::handle_socket(ws, ConnectInfo(addr), subscribers).await
+}
 
 #[tokio::main]
 async fn main() {
@@ -29,32 +51,46 @@ async fn main() {
 }
 
 /// Runs the server in web test mode, serving both WebSocket and static web content.
-/// The WebSocket server now supports session-based topic subscriptions, which ensures
-/// that messages are only delivered to subscribers within the same session.
 async fn run_web_test() {
     // Initialize the subscribers map with session support
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
+    // Generate a web-compatible keypair for encryption tests
+    let enc_state = create_web_compatible_state();
+
+    // Setup CORS for the API
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    // Create encryption router with the same state type as the main router
+    let encryption_router = enc_api_router::<Subscribers>(enc_state);
+
     // Configure the WebSocket app on port 8081
-    let ws_app = Router::new().route(
-        "/ws",
-        get({
-            let subs = subscribers.clone();
-            move |ws, info| handle_socket(ws, info, subs.clone())
-        }),
-    );
+    let ws_app = Router::new()
+        .route(
+            "/ws",
+            get(handle_socket_adapter),
+        )
+        // Now merge works because the routers have compatible state types
+        .merge(encryption_router)
+        .layer(cors)
+        .with_state(subscribers.clone());
 
     // Spawn a task to handle WebSocket connections
     tokio::spawn(async move {
         let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
         println!("Listening at ws://127.0.0.1:8081/ws");
+        println!("Encryption API available at http://127.0.0.1:8081/enc/public-key");
         axum::serve(listener, ws_app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .unwrap();
     });
 
     // Configure the static web app on port 8080
-    let web_app = Router::new().nest_service("/", ServeDir::new("web"));
+    let web_app = Router::new()
+        .nest_service("/", ServeDir::new("web"));
 
     // Serve the static web content
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
@@ -65,25 +101,83 @@ async fn run_web_test() {
         .unwrap();
 }
 
-/// Runs the server in local test mode, including WebSocket handling and client tests.
+/// Runs the server in local test mode, first running encryption tests followed by WebSocket tests.
 async fn run_local_test() {
+    println!("Starting local test sequence...");
+    
+    // First run the encryption tests
+    run_local_enc_tests().await;
+    
+    // Then run the WebSocket tests
+    run_local_ws_tests().await;
+    
+    println!("All local tests completed.");
+}
+
+/// Runs local encryption tests
+async fn run_local_enc_tests() {
+    println!("\n=== Starting Encryption Tests ===");
+    
+    // Generate a web-compatible keypair for encryption tests
+    let enc_state = create_web_compatible_state();
+    
+    // Setup CORS for the API
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+        
+    // Create encryption router with dummy state since it's not needed for tests
+    let encryption_router = enc_api_router::<()>(enc_state);
+    
+    // Configure the encryption API server on port 8082 (different port to avoid conflicts)
+    let enc_app = Router::new()
+        .merge(encryption_router)
+        .layer(cors);
+    
+    // Start the encryption API server
+    let listener = TcpListener::bind("127.0.0.1:8082").await.unwrap();
+    println!("Encryption API available at http://127.0.0.1:8082/enc/public-key");
+    
+    // Start the server in a background task
+    let server_handle = tokio::spawn(async move {
+        axum::serve(listener, enc_app.into_make_service())
+            .await
+            .unwrap();
+    });
+    
+    // Wait a moment for the server to start
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+    
+    // Run the encryption tests that match the JavaScript tests
+    match enc_tests::run_encryption_tests().await {
+        Ok(_) => println!("✓ Encryption tests passed successfully"),
+        Err(e) => println!("✗ Encryption tests failed: {}", e),
+    };
+    
+    // Terminate the server after tests
+    server_handle.abort();
+    println!("=== Encryption Tests Completed ===\n");
+}
+
+/// Runs local WebSocket tests (previously the content of run_local_test)
+async fn run_local_ws_tests() {
+    println!("=== Starting WebSocket Tests ===");
+    
     // Initialize the subscribers map with session support
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
     // Configure the WebSocket app on port 8081
     let app = Router::new().route(
         "/ws",
-        get({
-            let subs = subscribers.clone();
-            move |ws, info| handle_socket(ws, info, subs.clone())
-        }),
-    );
+        get(handle_socket_adapter),
+    ).with_state(subscribers.clone());
 
     // Start the WebSocket server
     let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
     println!("Listening at ws://127.0.0.1:8081/ws");
 
-    tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .unwrap();
@@ -91,5 +185,9 @@ async fn run_local_test() {
 
     // Run client tests after a slight delay to let the server start
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-    client_tests::run_client_tests().await;
+    ws_tests::run_client_tests().await; // Updated from client_tests to ws_tests
+    
+    // Terminate the server after tests
+    server_handle.abort();
+    println!("=== WebSocket Tests Completed ===");
 }

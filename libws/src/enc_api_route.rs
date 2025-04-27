@@ -1,12 +1,12 @@
 // src/enc_api_route.rs
 
 use axum::{
-    routing::get,
-    response::IntoResponse,
     Router,
+    routing::get,
+    extract::State,
 };
+use crate::enc_utils::KeyPair;
 use std::sync::Arc;
-use crate::enc_util::{KeyPair, serialize_public_key};
 
 #[derive(Clone)]
 pub struct EncApiState {
@@ -14,10 +14,23 @@ pub struct EncApiState {
 }
 
 /// Builds a router exposing encryption-related endpoints
-pub fn enc_api_router(state: EncApiState) -> Router {
+/// The generic parameter allows the router to be compatible with different state types
+pub fn enc_api_router<S>(state: EncApiState) -> Router<S> 
+where 
+    S: Clone + Send + Sync + 'static,
+{
     Router::new()
-        .route("/enc/public-key", get(move || {
-            let key = serialize_public_key(&state.keypair.public_key);
-            async move { key }
-        }))
+        .route("/enc/public-key", get(
+            move |_: State<S>| async move {
+                // Just return the stored base64 public key directly
+                state.keypair.public_key.clone()
+            }
+        ))
+}
+
+/// Create a new EncApiState with a P-256 keypair for web compatibility
+pub fn create_web_compatible_state() -> EncApiState {
+    let keypair = Arc::new(KeyPair::generate_p256());
+    println!("Generated web-compatible P-256 encryption key");
+    EncApiState { keypair }
 }
