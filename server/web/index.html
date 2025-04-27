@@ -7,20 +7,43 @@
     body { font-family: sans-serif; margin: 2rem; }
     #log {
       width: 100%;
-      height: 300px;
+      height: 400px; /* Increased height for better log visibility */
       border: 1px solid #ccc;
       padding: 0.5rem;
       overflow-y: scroll;
       white-space: pre-wrap;
       background: #f9f9f9;
+      font-family: monospace;
+      font-size: 14px;
     }
     #startBtn {
       padding: 0.5rem 1rem;
       font-size: 1rem;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    h1 {
+      color: #333;
+    }
+    .description {
+      margin-bottom: 20px;
+      color: #555;
+    }
+    .highlight {
+      color: #0066cc;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
+  <h1>WebSocket Session-Based PubSub Test</h1>
+  <div class="description">
+    This test demonstrates session-based message routing. Clients in <span class="highlight">session A</span> will only 
+    receive messages published to their session, and similarly for <span class="highlight">session B</span>.
+  </div>
   <button id="startBtn">Start Test</button>
   <div id="log"></div>
   <script type="module" src="./tests.js"></script>

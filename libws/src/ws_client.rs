@@ -14,6 +14,7 @@ type Callback = Box<dyn Fn(String) + Send + Sync>;
 /// Represents a WebSocket client with per-topic message handlers.
 pub struct WsClient {
     pub name: String, // The name of the client
+    pub session_id: String, // The session ID for this client
     pub ws_channel: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>, // WebSocket channel for sending messages
     on_message_handlers: Arc<Mutex<HashMap<String, Callback>>>, // Handlers for incoming messages by topic
     _async_task_handler: JoinHandle<()>, // Background task for receiving messages
@@ -23,7 +24,19 @@ pub struct WsClient {
 impl WsClient {
     /// Connects to a WebSocket server and registers the client name.
     pub async fn connect(client_name: &str, ws_url: &str) -> tokio_tungstenite::tungstenite::Result<Self> {
-        println!("[connect] client_name={}, ws_url={} -- executing", client_name, ws_url);
+        // Use a default session ID derived from client name
+        let session_id = format!("session-{}", client_name);
+        Self::connect_with_session(client_name, session_id.as_str(), ws_url).await
+    }
+
+    /// Connects to a WebSocket server with a specific session ID.
+    pub async fn connect_with_session(
+        client_name: &str, 
+        session_id: &str, 
+        ws_url: &str
+    ) -> tokio_tungstenite::tungstenite::Result<Self> {
+        println!("[connect] client_name={}, session_id={}, ws_url={} -- executing", 
+            client_name, session_id, ws_url);
 
         // Establish the WebSocket connection
         let (stream, _) = connect_async(ws_url).await?;
@@ -32,6 +45,10 @@ impl WsClient {
         // Register the client name with the server
         let register_msg = format!("register-name:{}", client_name);
         ws_channel.send(Message::Text(register_msg)).await?;
+        
+        // Register the session ID with the server
+        let register_session = format!("register-session:{}", session_id);
+        ws_channel.send(Message::Text(register_session)).await?;
 
         let name_clone = client_name.to_string();
         let handlers = Arc::new(Mutex::new(HashMap::<String, Callback>::new()));
@@ -47,10 +64,11 @@ impl WsClient {
                             let payload = parsed.get("payload").and_then(|m| m.as_str()).unwrap_or("<no message>");
                             let publisher = parsed.get("publisher_name").and_then(|p| p.as_str()).unwrap_or("<unknown>");
                             let timestamp = parsed.get("timestamp").and_then(|t| t.as_str()).unwrap_or("???");
+                            let msg_session = parsed.get("session_id").and_then(|s| s.as_str()).unwrap_or("<unknown>");
 
                             println!(
-                                "[on_message] {} <- topic={}, payload={}, publisher={}, timestamp={}",
-                                name_clone, topic, payload, publisher, timestamp
+                                "[on_message] {} <- topic={}, payload={}, publisher={}, timestamp={}, session={}",
+                                name_clone, topic, payload, publisher, timestamp, msg_session
                             );
 
                             // Invoke the callback for the topic if it exists
@@ -66,10 +84,11 @@ impl WsClient {
             }
         });
 
-        println!("[connect] client_name={} -- complete", client_name);
+        println!("[connect] client_name={}, session_id={} -- complete", client_name, session_id);
 
         Ok(Self {
             name: client_name.to_string(),
+            session_id: session_id.to_string(),
             ws_channel,
             on_message_handlers: handlers,
             _async_task_handler: task,
@@ -77,39 +96,42 @@ impl WsClient {
         })
     }
 
-    /// Subscribes the client to a specific topic.
+    /// Subscribes the client to a specific topic within its session.
     pub async fn subscribe(&mut self, subscriber_name: &str, topic: &str, payload: &str) {
-        println!("[subscribe] subscriber_name={}, topic={}, payload={}", subscriber_name, topic, payload);
-        let cmd = format!("subscribe:{}", topic);
+        println!("[subscribe] subscriber_name={}, topic={}, payload={}, session={}", 
+            subscriber_name, topic, payload, self.session_id);
+        
+        let cmd = format!("subscribe:{}|{}", topic, self.session_id);
         if let Err(e) = self.ws_channel.send(Message::Text(cmd)).await {
             println!("[subscribe] Error: {:?}", e);
         }
     }
 
-    /// Unsubscribes the client from a specific topic.
+    /// Unsubscribes the client from a specific topic within its session.
     pub async fn unsubscribe(&mut self, topic: &str) {
-        println!("[unsubscribe] topic={}", topic);
-        let cmd = format!("unsubscribe:{}", topic);
+        println!("[unsubscribe] topic={}, session={}", topic, self.session_id);
+        let cmd = format!("unsubscribe:{}|{}", topic, self.session_id);
         if let Err(e) = self.ws_channel.send(Message::Text(cmd)).await {
             println!("[unsubscribe] Error: {:?}", e);
         }
     }
 
-    /// Publishes a message to a specific topic.
+    /// Publishes a message to a specific topic within the client's session.
     pub async fn publish(&mut self, publisher_name: &str, topic: &str, payload: &str, timestamp: &str) -> Result<(), String> {
         // Check connection state first
         if !*self.is_connected.lock().unwrap() {
             return Err("WebSocket is not connected".to_string());
         }
 
-        println!("[publish] publisher_name={}, topic={}, payload={}, timestamp={}", 
-            publisher_name, topic, payload, timestamp);
+        println!("[publish] publisher_name={}, topic={}, payload={}, timestamp={}, session={}", 
+            publisher_name, topic, payload, timestamp, self.session_id);
         
         let msg = json!({
             "publisher_name": publisher_name,
             "topic": topic,
             "payload": payload,
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "session_id": self.session_id
         });
         let cmd = format!("publish-json:{}", msg.to_string());
 

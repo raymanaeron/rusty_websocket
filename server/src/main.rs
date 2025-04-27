@@ -29,7 +29,10 @@ async fn main() {
 }
 
 /// Runs the server in web test mode, serving both WebSocket and static web content.
+/// The WebSocket server now supports session-based topic subscriptions, which ensures
+/// that messages are only delivered to subscribers within the same session.
 async fn run_web_test() {
+    // Initialize the subscribers map with session support
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
     // Configure the WebSocket app on port 8081
@@ -64,6 +67,7 @@ async fn run_web_test() {
 
 /// Runs the server in local test mode, including WebSocket handling and client tests.
 async fn run_local_test() {
+    // Initialize the subscribers map with session support
     let subscribers: Subscribers = Arc::new(Mutex::new(HashMap::new()));
 
     // Configure the WebSocket app on port 8081
