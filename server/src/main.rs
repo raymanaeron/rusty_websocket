@@ -6,12 +6,13 @@ use axum::{
         connect_info::ConnectInfo, 
         ws::WebSocketUpgrade,
         State,
+        Query,
     },
     response::IntoResponse,
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use libws::Subscribers;
+use libws::{Subscribers, WebSocketParams};
 mod ws_tests; // Updated from client_tests
 mod enc_tests;
 
@@ -23,15 +24,17 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use tower_http::cors::{Any, CorsLayer};
 use libws::enc_api_route::{enc_api_router, create_web_compatible_state};
+use libws::jwt_api_route::{jwt_api_router, create_default_jwt_state}; // Add the JWT API module
 
 /// Adapter function to bridge between server and library
 async fn handle_socket_adapter(
     ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(subscribers): State<Subscribers>,
+    query_params: Option<Query<WebSocketParams>>,  // Add query parameters
 ) -> impl IntoResponse {
-    // Call the libws handler
-    libws::handle_socket(ws, ConnectInfo(addr), subscribers).await
+    // Call the libws handler with query parameters
+    libws::handle_socket(ws, ConnectInfo(addr), query_params, subscribers).await
 }
 
 #[tokio::main]
@@ -40,6 +43,19 @@ async fn main() {
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!("[server] PANIC: {:?}", panic_info);
     }));
+
+    // Log environment variable configuration for JWT
+    if env::var("JWT_SECRET_KEY").is_ok() {
+        println!("Using JWT_SECRET_KEY from environment");
+    } else {
+        println!("JWT_SECRET_KEY not set - using default (insecure for production)");
+    }
+
+    if let Ok(expiration) = env::var("JWT_EXPIRATION_SECONDS") {
+        println!("Using JWT_EXPIRATION_SECONDS: {} seconds", expiration);
+    } else {
+        println!("JWT_EXPIRATION_SECONDS not set - using default (3600 seconds)");
+    }
 
     // Parse command-line arguments to determine the mode of operation
     let args: Vec<String> = env::args().collect();
@@ -57,6 +73,9 @@ async fn run_web_test() {
 
     // Generate a web-compatible keypair for encryption tests
     let enc_state = create_web_compatible_state();
+    
+    // Create JWT state for authentication
+    let jwt_state = create_default_jwt_state();
 
     // Setup CORS for the API
     let cors = CorsLayer::new()
@@ -66,6 +85,9 @@ async fn run_web_test() {
 
     // Create encryption router with the same state type as the main router
     let encryption_router = enc_api_router::<Subscribers>(enc_state);
+    
+    // Create JWT authentication router
+    let jwt_router = jwt_api_router::<Subscribers>(jwt_state);
 
     // Configure the WebSocket app on port 8081
     let ws_app = Router::new()
@@ -73,8 +95,9 @@ async fn run_web_test() {
             "/ws",
             get(handle_socket_adapter),
         )
-        // Now merge works because the routers have compatible state types
+        // Now merge both routers
         .merge(encryption_router)
+        .merge(jwt_router) // Add the JWT router
         .layer(cors)
         .with_state(subscribers.clone());
 
@@ -83,6 +106,7 @@ async fn run_web_test() {
         let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
         println!("Listening at ws://127.0.0.1:8081/ws");
         println!("Encryption API available at http://127.0.0.1:8081/enc/public-key");
+        println!("JWT API available at http://127.0.0.1:8081/jwt"); // Add JWT API info
         axum::serve(listener, ws_app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .unwrap();
@@ -121,6 +145,9 @@ async fn run_local_enc_tests() {
     // Generate a web-compatible keypair for encryption tests
     let enc_state = create_web_compatible_state();
     
+    // Create JWT state for authentication
+    let jwt_state = create_default_jwt_state();
+    
     // Setup CORS for the API
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -130,14 +157,19 @@ async fn run_local_enc_tests() {
     // Create encryption router with dummy state since it's not needed for tests
     let encryption_router = enc_api_router::<()>(enc_state);
     
+    // Create JWT authentication router
+    let jwt_router = jwt_api_router::<()>(jwt_state);
+    
     // Configure the encryption API server on port 8082 (different port to avoid conflicts)
     let enc_app = Router::new()
         .merge(encryption_router)
+        .merge(jwt_router) // Add the JWT router
         .layer(cors);
     
     // Start the encryption API server
     let listener = TcpListener::bind("127.0.0.1:8082").await.unwrap();
     println!("Encryption API available at http://127.0.0.1:8082/enc/public-key");
+    println!("JWT API available at http://127.0.0.1:8082/jwt"); // Add JWT API info
     
     // Start the server in a background task
     let server_handle = tokio::spawn(async move {

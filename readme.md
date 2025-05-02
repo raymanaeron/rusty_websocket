@@ -1,6 +1,7 @@
 # TODO: THIS IS A WORK IN PROGRESS
 - The encryption/decryption working ok but not hooked up with the web socket server. This is a tough one and I need to pick it up some other time
 - The web socket server has session based pub/sub implmentation which are hooked up and working properly
+- JWT authentication has been added for secure connections
 
 # WebSocket-based Pub/Sub Framework for Distributed Applications
 
@@ -9,6 +10,8 @@ Modern applications often consist of multiple distributed components that need t
 
 When multiple users or devices connect to the same messaging system, there's a critical need for session isolation. Without proper session boundaries, messages intended for one user's session might be delivered to another user's session, creating privacy concerns and data leakage. This is especially problematic in multi-tenant applications where different user sessions must remain strictly isolated.
 
+Furthermore, modern real-time communication systems require robust authentication and authorization mechanisms. Unauthenticated WebSocket connections can lead to unauthorized access, data breaches, and potential impersonation attacks. Standard cookie-based authentication is insufficient for WebSockets, especially across different domains or in non-browser environments. A token-based authentication system like JWT is necessary to verify user identity, maintain secure sessions, and provide fine-grained access control while supporting both browser and non-browser clients.
+
 ## Solution
 This framework provides a lightweight pub/sub (publish-subscribe) messaging system using WebSocket technology. It includes:
 - A high-performance Rust WebSocket server using axum
@@ -16,6 +19,7 @@ This framework provides a lightweight pub/sub (publish-subscribe) messaging syst
 - A JavaScript client implementation for web browsers
 - JSON-based message protocol for cross-platform compatibility
 - Session-based message routing to ensure privacy and data isolation between users
+- JWT-based authentication for secure connections
 
 ## Benefits
 - Real-time bidirectional communication
@@ -25,6 +29,8 @@ This framework provides a lightweight pub/sub (publish-subscribe) messaging syst
 - Simple API for both Rust and JavaScript clients
 - Session-scoped messaging to prevent cross-session data leakage
 - Proper isolation between different user sessions or application instances
+- Secure authentication with JWT tokens
+- Integration of authentication with the session system
 
 ## Architecture
 
@@ -35,6 +41,7 @@ This framework provides a lightweight pub/sub (publish-subscribe) messaging syst
    connect()     JSON Message              connect()
    subscribe()    Protocol              subscribe()
    publish()                            publish()
+   auth_token()                         auth_token()
 ```
 
 ### Message Protocol
@@ -57,6 +64,16 @@ let mut client = WsClient::connect("Client1", "ws://127.0.0.1:8081/ws").await?;
 
 // Or connect with a specific session ID
 let mut client = WsClient::connect_with_session("Client1", "user-session-123", "ws://127.0.0.1:8081/ws").await?;
+
+// Or connect with JWT authentication
+let mut client = WsClient::connect_with_auth(
+    "Client1",
+    "ws://127.0.0.1:8081/ws",
+    "http://127.0.0.1:8081/auth/token",
+    "username",
+    "password",
+    Some("user-session-123")
+).await?;
 ```
 
 ### Subscribe to Topics
@@ -90,6 +107,28 @@ if let Err(e) = result {
 }
 ```
 
+### JWT Token Management
+```rust
+// Check if client is authenticated
+if client.is_authenticated() {
+    println!("Client is authenticated via JWT");
+}
+
+// Get the current token if needed
+if let Some(token) = client.get_token() {
+    println!("Current JWT token: {}", token);
+}
+
+// Refresh token if needed
+if let Ok(refreshed) = client.refresh_token_if_needed().await {
+    if refreshed {
+        println!("Token was refreshed");
+    } else {
+        println!("Token is still valid");
+    }
+}
+```
+
 ## Using the JavaScript Client
 
 ### Connection and Subscribe
@@ -114,6 +153,29 @@ const client = await createClient(
 // Only messages published to "user-session-456" will be received
 ```
 
+### Authenticated Connection
+```javascript
+import { jwtManager, createAuthenticatedWebSocket } from './jwt_utils.js';
+
+// Authenticate and create WebSocket connection
+const ws = await createAuthenticatedWebSocket(
+    "ws://localhost:8081/ws", 
+    "http://localhost:8081/auth/token", 
+    "username", 
+    "password", 
+    "user-session-456"
+);
+
+// Subscribe to topics
+ws.send(`subscribe:AuthenticatedTestTopic|user-session-456`);
+
+// Set up message handler
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log(`Received message: ${data.payload}`);
+};
+```
+
 ### Publishing Messages
 ```javascript
 const message = {
@@ -125,6 +187,23 @@ const message = {
 };
 
 ws.send(`publish-json:${JSON.stringify(message)}`);
+```
+
+### JWT Token Management
+```javascript
+// Check if authenticated
+if (jwtManager.isAuthenticated()) {
+    console.log("Client is authenticated");
+}
+
+// Get current token
+const token = jwtManager.getToken();
+if (token) {
+    console.log("Have valid token");
+}
+
+// Clear token (e.g., for logout)
+jwtManager.clearToken();
 ```
 
 ## Running the Framework
@@ -149,14 +228,18 @@ This:
 libws/
   ├── src/
   │   ├── lib.rs        # Core WebSocket server implementation
-  │   └── ws_client.rs  # Rust client implementation
+  │   ├── ws_client.rs  # Rust client implementation
+  │   ├── jwt_utils.rs  # JWT utilities for token handling
+  │   └── jwt_api_route.rs # JWT authentication API
 server/
   ├── src/
   │   ├── main.rs       # Server entry point
   │   └── client_tests.rs # Automated Rust client tests
   └── web/
       ├── index.html    # Web client UI
-      └── tests.js      # JavaScript client implementation
+      ├── tests.js      # JavaScript client implementation
+      ├── jwt_utils.js  # JWT utilities for JavaScript
+      └── jwt_tests.html # JWT authentication test page
 ```
 
 ## Dependencies
@@ -165,3 +248,46 @@ server/
 - axum for WebSocket server
 - serde_json for message serialization
 - chrono for timestamp handling
+- jsonwebtoken for JWT authentication
+- reqwest for HTTP client functionality
+
+## JWT Authentication Configuration
+
+The JWT authentication system can be configured using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| JWT_SECRET_KEY | Secret key used to sign JWTs | "rusty_websocket_jwt_secret_key_32b" |
+| JWT_EXPIRATION_SECONDS | Token expiration time in seconds | 3600 (1 hour) |
+
+### JWT Authentication Flow
+
+1. Client requests a token via the `/auth/token` endpoint, providing username, password, and optional session ID
+2. Server validates credentials and issues a JWT token containing user identity and session ID
+3. Client includes this token in WebSocket connection URL as a query parameter
+4. Server validates the token and establishes an authenticated WebSocket connection
+5. Session ID from the token is used for message routing
+
+### JWT Token Structure
+
+```json
+{
+  "sub": "username",     // Subject (user identifier)
+  "sid": "session-123",  // Session ID (optional)
+  "iat": 1714597440,     // Issued at time
+  "exp": 1714601040      // Expiration time
+}
+```
+
+### Example: Using JWT with curl
+
+```bash
+# Get a JWT token
+curl -X POST http://localhost:8081/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","password":"password","session_id":"my-session"}'
+
+# Response will be like:
+# {"token":"eyJhbGciOiJIUzI1NiJ9...","expires_in":3600}
+```
+````markdown
