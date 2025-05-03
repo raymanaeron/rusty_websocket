@@ -1,8 +1,3 @@
-# TODO: THIS IS A WORK IN PROGRESS
-- The encryption/decryption working ok but not hooked up with the web socket server. This is a tough one and I need to pick it up some other time
-- The web socket server has session based pub/sub implmentation which are hooked up and working properly
-- JWT authentication has been added for secure connections
-
 # WebSocket-based Pub/Sub Framework for Distributed Applications
 
 ## Problem Statement
