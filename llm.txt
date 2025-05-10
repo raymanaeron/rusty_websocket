@@ -1,0 +1,369 @@
+# Rusty WebSocket
+Rusty WebSocket is a WebSocket-based pub/sub framework that supports both Rust and JavaScript clients
+
+- [Source code](https://github.com/yourusername/rusty_websocket)
+- [Guide: How to use this file with LLMs](#guide)
+
+## Overview
+
+Rusty WebSocket provides a lightweight pub/sub (publish-subscribe) messaging system with:
+- A high-performance Rust WebSocket server using axum
+- Session-based message routing 
+- JWT-based authentication
+- Cross-language client support (Rust, JavaScript)
+
+## Architecture
+
+```
+[Rust Client] ←→ [WebSocket Server] ←→ [Browser Client]
+     ↑               ↑                        ↑
+     |               |                        |
+   connect()     JSON Message              connect()
+   subscribe()    Protocol              subscribe()
+   publish()                            publish()
+   auth_token()                         auth_token()
+```
+
+## Message Protocol
+
+```json
+{
+  "publisher_name": "Client1",
+  "topic": "NetworkConnectedEvent", 
+  "payload": "Network connected",
+  "timestamp": "2024-01-24T10:25:37Z",
+  "session_id": "session-user123"
+}
+```
+
+## Rust Client Usage
+
+### Connection
+
+Here are the different ways to connect to the WebSocket server:
+
+```rust
+// Connect with default session ID (derived from client name)
+let mut client = WsClient::connect("Client1", "ws://127.0.0.1:8081/ws").await?;
+
+// Connect with a specific session ID
+let mut client = WsClient::connect_with_session("Client1", "user-session-123", "ws://127.0.0.1:8081/ws").await?;
+
+// Connect with JWT authentication
+let mut client = WsClient::connect_with_auth(
+    "Client1",
+    "ws://127.0.0.1:8081/ws",
+    "http://127.0.0.1:8081/auth/token",
+    "username",
+    "password",
+    Some("user-session-123")
+).await?;
+```
+
+### Subscription
+
+```rust
+// Subscribe to topics within the client's session
+client.subscribe("Client1", "DetectCustomerEvent", "no-payload").await;
+client.subscribe("Client1", "NetworkConnectedEvent", "no-payload").await;
+
+// Register message handlers 
+client.on_message("DetectCustomerEvent", move |msg| {
+    println!("Customer Event: {}", msg);
+});
+
+client.on_message("NetworkConnectedEvent", move |msg| {
+    println!("Network Event: {}", msg);
+});
+```
+
+### Publishing Messages
+
+```rust
+use chrono::Utc;
+
+// Publish a message to a topic within the client's session
+let result = client.publish(
+    "Client1",
+    "NetworkConnectedEvent",
+    "Network connected successfully",
+    &Utc::now().to_rfc3339()
+).await;
+
+if let Err(e) = result {
+    println!("Failed to publish: {}", e);
+}
+```
+
+### JWT Token Management
+
+```rust
+// Check if client is authenticated
+if client.is_authenticated() {
+    println!("Client is authenticated via JWT");
+}
+
+// Get the current token if needed
+if let Some(token) = client.get_token() {
+    println!("Current JWT token: {}", token);
+}
+
+// Refresh token if needed
+if let Ok(refreshed) = client.refresh_token_if_needed().await {
+    if refreshed {
+        println!("Token was refreshed");
+    } else {
+        println!("Token is still valid");
+    }
+}
+```
+
+## JavaScript Client Usage
+
+### Connection and Authentication
+
+```javascript
+import { jwtManager, createAuthenticatedWebSocket } from './jwt_utils.js';
+
+// Authenticate and create WebSocket connection
+const wsUrl = 'ws://localhost:8081/ws';
+const authUrl = 'http://localhost:8081/auth/token';
+const username = 'testuser';
+const password = 'password';
+const sessionId = 'user-session-456';
+
+// Create authenticated WebSocket connection
+const ws = await createAuthenticatedWebSocket(
+    wsUrl, 
+    authUrl, 
+    username, 
+    password, 
+    sessionId
+);
+
+// Register client name (optional for authenticated connections)
+ws.send(`register-name:Client1`);
+
+// Register session ID (optional for authenticated connections)
+ws.send(`register-session:${sessionId}`);
+```
+
+### Subscribing to Topics
+
+```javascript
+// Subscribe to topics with explicit session ID
+const topic = "DetectCustomerEvent";
+ws.send(`subscribe:${topic}|${sessionId}`);
+
+// Set up message handler
+ws.onmessage = (event) => {
+    try {
+        // Try to parse the message as JSON
+        const data = JSON.parse(event.data);
+        
+        console.log(`Received message: Topic=${data.topic}, Payload=${data.payload}`);
+        console.log(`Message details: Publisher=${data.publisher_name}, Session=${data.session_id}`);
+    } catch (error) {
+        // Handle non-JSON messages
+        console.log(`Received non-JSON message: ${event.data}`);
+    }
+};
+```
+
+### Publishing Messages
+
+```javascript
+// Create message object
+const message = {
+    publisher_name: "Client1",
+    topic: "NetworkConnectedEvent",
+    payload: "Network connected successfully",
+    timestamp: new Date().toISOString(),
+    session_id: sessionId
+};
+
+// Publish the message
+ws.send(`publish-json:${JSON.stringify(message)}`);
+```
+
+### JWT Token Management
+
+```javascript
+// Check if authenticated
+if (jwtManager.isAuthenticated()) {
+    console.log("Client is authenticated");
+}
+
+// Get current token
+const token = jwtManager.getToken();
+if (token) {
+    console.log("Have valid token");
+}
+
+// Clear token (e.g., for logout)
+jwtManager.clearToken();
+```
+
+## Complete JavaScript Example
+
+```javascript
+async function setupClient(clientName, sessionId, wsUrl, authUrl, username, password) {
+    // Create an authenticated WebSocket connection
+    const ws = await createAuthenticatedWebSocket(
+        wsUrl, 
+        authUrl, 
+        username, 
+        password, 
+        sessionId
+    );
+    
+    console.log(`${clientName}: Authentication successful with session ${sessionId}`);
+    
+    // Set up message handler
+    ws.onmessage = (event) => {
+        try {
+            // Try to parse the message as JSON
+            const data = JSON.parse(event.data);
+            
+            // Format the client and session for display
+            const clientSessionTag = `[${clientName}:${sessionId}]`;
+            
+            // Log received messages
+            console.log(`${clientSessionTag} Received message: Topic=${data.topic}, Payload=${data.payload}`);
+        } catch (error) {
+            // Handle non-JSON messages
+            console.log(`${clientName} received non-JSON message: ${event.data}`);
+        }
+    };
+    
+    // Register client name
+    ws.send(`register-name:${clientName}`);
+    
+    // Register session ID
+    ws.send(`register-session:${sessionId}`);
+    
+    // Subscribe to topics
+    ws.send(`subscribe:NetworkConnectedEvent|${sessionId}`);
+    ws.send(`subscribe:DetectCustomerEvent|${sessionId}`);
+    
+    return { ws, name: clientName, sessionId };
+}
+
+// Example usage
+const client = await setupClient(
+    "Client1", 
+    "session-A", 
+    "ws://localhost:8081/ws",
+    "http://localhost:8081/auth/token",
+    "testuser",
+    "password"
+);
+
+// Publish a message
+const message = {
+    publisher_name: client.name,
+    topic: "NetworkConnectedEvent",
+    payload: "Hello from client!",
+    timestamp: new Date().toISOString(),
+    session_id: client.sessionId
+};
+
+client.ws.send(`publish-json:${JSON.stringify(message)}`);
+```
+
+## Complete Rust Example
+
+```rust
+use libws::ws_client::WsClient;
+use tokio::time::{sleep, Duration};
+use chrono::Utc;
+
+async fn run_client_test() {
+    let url = "ws://127.0.0.1:8081/ws"; 
+    let session_id = "session-A";
+    let client_name = "Client1";
+    
+    // Connect to WebSocket server
+    let mut client = WsClient::connect_with_session(client_name, session_id, url).await.unwrap();
+    
+    // Register message handlers
+    client.on_message("DetectCustomerEvent", move |msg| {
+        println!("[{client_name}:{session_id}] => DetectCustomerEvent: {msg}");
+    });
+    
+    client.on_message("NetworkConnectedEvent", move |msg| {
+        println!("[{client_name}:{session_id}] => NetworkConnectedEvent: {msg}");
+    });
+    
+    // Subscribe to topics
+    client.subscribe(client_name, "DetectCustomerEvent", "no-payload").await;
+    client.subscribe(client_name, "NetworkConnectedEvent", "no-payload").await;
+    
+    // Allow time for subscriptions to propagate
+    sleep(Duration::from_millis(300)).await;
+    
+    // Publish a message
+    let timestamp = Utc::now().to_rfc3339();
+    if let Err(e) = client.publish(client_name, "NetworkConnectedEvent", "Hello from Rust client", &timestamp).await {
+        println!("[{client_name}] Publish failed: {e}");
+    }
+    
+    // Wait for message processing
+    sleep(Duration::from_secs(2)).await;
+}
+```
+
+## Special Commands
+
+### WebSocket Commands
+
+- `register-name:{clientName}` - Register the client name
+- `register-session:{sessionId}` - Register the session ID
+- `subscribe:{topic}|{sessionId}` - Subscribe to a topic within a session
+- `unsubscribe:{topic}|{sessionId}` - Unsubscribe from a topic within a session
+- `publish-json:{jsonPayload}` - Publish a JSON message
+- `ping` - Send a ping message (server will respond with "pong")
+
+## Authentication API
+
+### JWT Token Request
+
+```http
+POST /auth/token
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "password": "password",
+  "session_id": "optional-session-id" 
+}
+```
+
+Response:
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_in": 3600
+}
+```
+
+## Rules and Best Practices
+
+1. Always maintain session isolation - messages are only delivered to clients in the same session
+2. Include explicit session_id in all publish operations
+3. For JWT authenticated connections, refresh tokens before they expire
+4. Close WebSocket connections and clear tokens when done
+5. Include error handling for all WebSocket operations
+6. Use structured JSON messages for all publish operations
+7. Include timestamps in messages for traceability
+8. Recommended session naming convention: "session-{username}" or "session-{uuid}"
+
+## <a name="guide"></a>How to Use This File with LLMs
+
+This file is structured to help large language models (LLMs) understand and generate code for the Rusty WebSocket library. When asking an LLM about Rusty WebSocket:
+
+1. Reference this file directly
+2. Be specific about whether you need Rust or JavaScript implementation
+3. Provide context about your specific use case
+4. Ask for complete code snippets rather than fragments
+5. For complex scenarios, describe the desired message flow
